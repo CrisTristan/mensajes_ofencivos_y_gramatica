@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat con Filtro Ofensivo</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f0f2f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-container {
+      max-width: 1000px;
+      margin: 0 auto;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+
+    .chat-header {
+      background: #075e54;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    #mensajes {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .mensaje {
+      max-width: 65%;
+      padding: 0.5rem 1rem;
+      border-radius: 7.5px;
+      position: relative;
+      word-wrap: break-word;
+      margin-bottom: 0.5rem;
+    }
+
+    .mensaje-propio {
+      align-self: flex-end;
+      background: #dcf8c6;
+      margin-left: auto;
+    }
+
+    .mensaje-otro {
+      align-self: flex-start;
+      background: white;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.13);
+    }
+
+    .usuario {
+      font-weight: bold;
+      font-size: 0.9em;
+      margin-bottom: 0.2rem;
+      display: inline-block;
+      margin-right: 0.5rem;
+    }
+
+    .hora {
+      font-size: 0.7em;
+      color: #667781;
+      display: inline-block;
+    }
+
+    .contenido-mensaje {
+      margin-top: 0.2rem;
+    }
+
+    .censurado {
+      color: #ff0000;
+      font-style: italic;
+    }
+
+    .formulario-container {
+      background: #f0f2f5;
+      padding: 1rem;
+      border-top: 1px solid #e9edef;
+    }
+
+    #formulario {
+      display: flex;
+      gap: 0.5rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    input {
+      padding: 0.5rem;
+      border: 1px solid #e9edef;
+      border-radius: 8px;
+      flex: 1;
+    }
+
+    button {
+      background: #075e54;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #128c7e;
+    }
+
+    .login-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .login-box {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .login-box input {
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="login" class="login-container">
+    <div class="login-box">
+      <h2>Ingresa tu nombre</h2>
+      <input type="text" id="nombreUsuario" placeholder="Tu nombre">
+      <button onclick="iniciarChat()">Comenzar</button>
+    </div>
+  </div>
+
+  <div class="chat-container" style="display: none;">
+    <div class="chat-header">
+      <h1>Chat con Filtro de Mensajes Ofensivos</h1>
+    </div>
+    <div id="mensajes"></div>
+    <div class="formulario-container">
+      <form id="formulario">
+        <input type="text" id="mensaje" placeholder="Escribe tu mensaje" required>
+        <button id="motrarGramatica" type="button">Ver gramatica admitida</button>
+        <button type="submit">Enviar</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    const formulario = document.getElementById("formulario");
+    const inputMensaje = document.getElementById("mensaje");
+    const contenedor = document.getElementById("mensajes");
+    const loginContainer = document.getElementById("login");
+    const chatContainer = document.querySelector(".chat-container");
+    const miMensajePropioContenedor = document.getElementsByClassName("mensaje mensaje-propio");
+
+    let miColor = "#000000";
+    let miNombre = "";
+
+    function iniciarChat() {
+      const nombre = document.getElementById("nombreUsuario").value.trim();
+      if (nombre) {
+        miNombre = nombre;
+        socket.emit("nuevoUsuario", nombre);
+        loginContainer.style.display = "none";
+        chatContainer.style.display = "flex";
+      }
+    }
+
+    socket.on("colorAsignado", (color) => {
+      miColor = color;
+    });
+
+    formulario.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const mensaje = {
+        texto: inputMensaje.value.trim(),
+        usuario: miNombre
+      };
+      if (mensaje.texto) {
+        socket.emit("nuevoMensaje", mensaje);
+        inputMensaje.value = "";
+      }
+    });
+
+    document.addEventListener('click', function(event) {
+    // Elimina cualquier popup existente antes de crear uno nuevo
+    const popupExistente = document.querySelector('.popup');
+    if (popupExistente) {
+        popupExistente.remove();
+    }
+
+    // Verifica si el elemento clickeado tiene la clase "mensaje mensaje-propio"
+    if (event.target.closest('.mensaje.mensaje-propio')) {
+        // Busca el contenido-mensaje dentro del elemento clickeado
+        var mensaje = event.target.closest('.mensaje.mensaje-propio').querySelector('.contenido-mensaje').innerText;
+        console.log(mensaje);
+        //mostrar un popup debajo del mensaje con una opcion que diga analizar mensaje
+        const popup = document.createElement('div');
+        popup.className = 'popup';
+        popup.style.position = 'absolute';
+        popup.style.backgroundColor = '#fff';
+        popup.style.border = '1px solid #ccc';
+        popup.style.padding = '10px';
+        popup.style.zIndex = '1000';
+        popup.style.top = `${event.clientY + 10}px`;
+        popup.style.left = `${event.clientX}px`;
+        popup.innerHTML = `<button id="analizarMensaje">Analizar mensaje</button>`;
+        document.body.appendChild(popup);
+        document.getElementById('analizarMensaje').addEventListener('click', function() {
+            // Aquí puedes enviar el mensaje al servidor para analizarlo
+            socket.emit('AnalisisGramatical', mensaje);
+            document.body.removeChild(popup); // Cierra el popup después de hacer clic
+        });
+    }
+});
+
+    socket.on("mensajeRecibido", (msg) => {
+
+      const div = document.createElement("div");
+      div.className = `mensaje ${msg.usuario === miNombre ? "mensaje-propio" : "mensaje-otro"}`;
+      div.style.backgroundColor = msg.usuario === miNombre ? "#dcf8c6" : "white";
+      
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "header-mensaje";
+      
+      const usuarioDiv = document.createElement("span");
+      usuarioDiv.className = "usuario";
+      usuarioDiv.style.color = msg.color;
+      usuarioDiv.textContent = msg.usuario;
+      
+      const horaDiv = document.createElement("span");
+      horaDiv.className = "hora";
+      const ahora = new Date();
+      horaDiv.textContent = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      
+      headerDiv.appendChild(usuarioDiv);
+      headerDiv.appendChild(horaDiv);
+      
+      const contenidoDiv = document.createElement("div");
+      contenidoDiv.className = "contenido-mensaje";
+      contenidoDiv.innerHTML = msg.esOfensivo ? 
+        `<span class="censurado">[Mensaje ofensivo censurado]</span>` : 
+        msg.texto;
+      
+      div.appendChild(headerDiv);
+      div.appendChild(contenidoDiv);
+      contenedor.appendChild(div);
+      contenedor.scrollTop = contenedor.scrollHeight;
+    });
+    
+    socket.on("resultadoAnalisis", (resultado) => {
+      const div = document.createElement("div");
+      div.className = "mensaje mensaje-otro";
+      div.style.backgroundColor = "#f0f2f5";
+      
+      const contenidoDiv = document.createElement("div");
+      contenidoDiv.className = "contenido-mensaje";
+      contenidoDiv.innerHTML = `<strong>Resultado del análisis:</strong> ${resultado.analisisLexico}
+      <br><strong>Es gramaticalmente correcta?</strong> ${resultado.resultadoSintactico ? "Sí" : "No"}`;
+      
+      div.appendChild(contenidoDiv);
+      contenedor.appendChild(div);
+      contenedor.scrollTop = contenedor.scrollHeight;
+    });
+
+    const mostrarGramaticaBtn = document.getElementById("motrarGramatica");
+    mostrarGramaticaBtn.addEventListener("click", function(e) {
+      e.preventDefault();
+      console.log("Mostrar gramatica");
+      verGramatica();
+    });
+
+    function verGramatica() {
+      const popup = document.createElement('div');
+      popup.className = 'popup-gramatica';
+      popup.style.position = 'fixed';
+      popup.style.top = '50%';
+      popup.style.left = '50%';
+      popup.style.transform = 'translate(-50%, -50%)';
+      popup.style.backgroundColor = '#fff';
+      popup.style.border = '1px solid #ccc';
+      popup.style.padding = '20px';
+      popup.style.zIndex = '1000';
+
+      const contenido = `
+        <h2>Gramática Admitida</h2>
+        <p>Gramatica libre de contexto</p>
+        <ul>
+          <li>S → NP VP</li>
+          <li>NP → Det N</li>
+          <li>VP → V NP</li>
+          <li>---------</li>
+          <li>Det → "el" | "la" | "los" | "las"| "un" | "una" </li>
+          <li>N → "gato" | "perro" | "pelota"| "croquetas"</li>
+          <li>V → "come" | "ve" | "juega" | "salta"</li>
+        </ul>
+        <button id="cerrarPopup">Cerrar</button>
+      `;
+      
+      popup.innerHTML = contenido;
+      document.body.appendChild(popup);
+
+      document.getElementById('cerrarPopup').addEventListener('click', () => {
+        document.body.removeChild(popup);
+      });
+    }
+  </script>
+</body>
+</html>
